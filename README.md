@@ -35,7 +35,29 @@ AWS, and wants the registries reviewed as code with one rule for where a thing
 goes. It assumes you have a Pulumi backend and credentials for the registry
 accounts. It chooses none of your account IDs, regions, projects or names.
 
-## Using it
+## The model
+
+Three ideas.
+
+**One rule per kind.** Visibility picks the column: public artifacts publish to
+public registries with the workflow's own token, private ones to the private
+registry with a role scoped to the repository and its release tag. The rule is a
+table, and a new artifact gets the row of its kind ([docs/kinds.md](docs/kinds.md)).
+
+**Plain functions over inputs.** `pkg/registry` and `pkg/ecrcache` are Pulumi
+functions. They register resources directly under the caller's stack, so a stack
+that already declares them adopts the module with an empty preview. Account IDs,
+regions, projects and ARNs are the caller's.
+
+**Names are API.** A Pulumi resource name is the resource's identity in state, so
+the names are a contract ([docs/contract.md](docs/contract.md)), and a change to
+one ships with an alias.
+
+## Install and a worked example
+
+```sh
+go get github.com/truvity/artifacts@v0.1.0
+```
 
 ```go
 import (
@@ -63,8 +85,63 @@ err = ecrcache.Deploy(ctx, logger, ecrcache.Options{Provider: provider, Credenti
 The functions register resources directly under your stack, so adopting a stack
 that already declares them is an empty preview ([docs/contract.md](docs/contract.md)).
 
+## Consumers
+
+None recorded at v0. A repository that adopts it adds a line here.
+
+## Neighbours
+
+- [k8s](https://github.com/truvity/k8s) — `pkg/aws/pullthroughcache`, the
+  component `pkg/ecrcache` configures, and the URN-stability model this
+  repository follows.
+- [aws-structure](https://github.com/truvity/aws-structure) — the accounts these
+  registries live in.
+- [policy](https://github.com/truvity/policy) — the contracts this repository is
+  held to (`docs/contracts/component.md`).
+- [ci-workflows](https://github.com/truvity/ci-workflows) — the shared CI and
+  release workflows, including the public and private release paths the kind
+  table describes.
+
+## Documentation
+
+- [docs/kinds.md](docs/kinds.md) — which artifact kind goes where, who may write,
+  naming and versioning.
+- [docs/contract.md](docs/contract.md) — inputs, resource names, tiers, release
+  identity.
+- [docs/decisions/](docs/decisions/) — the decisions, one page each.
+- [SECURITY.md](SECURITY.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## The rule that makes this repository public
+
+Mechanism only. Account IDs, regions, project and repository names, role and
+policy ARNs and credentials are the caller's, in the caller's private
+configuration. Nothing here defaults to one estate's value, and the tests use
+documentation placeholders and never reach an AWS account.
+[`hack/leak-canary.sh`](hack/leak-canary.sh) enforces the mechanical half over
+tracked files and runs in the gate; its only exceptions are the ARN grammar under
+`pkg/` and the placeholder IDs in tests, by path, with the reason in the script.
+
 ## Status
 
-v0.1.0. Not here yet: CodeArtifact domains and repositories as code (the reader
-roles are), and a registry mirror for clusters off AWS. See the
-[CHANGELOG](CHANGELOG.md).
+v0: the API may still move in a minor release, and every move is a `Breaking:`
+bullet in the [CHANGELOG](CHANGELOG.md). Not here yet: CodeArtifact domains and
+repositories as code (the reader roles are), and a registry mirror for clusters
+off AWS.
+
+## Development
+
+```sh
+devbox shell        # pins every tool
+just check          # build, test, lint, leak-canary
+just vuln           # reachable Go advisories (its own workflow in CI, not in check)
+```
+
+## Releasing
+
+Releases are a `v*` tag, which the shared release workflow turns into the Go
+module version and a GitHub Release. Automatic patch releases are not armed; the
+first release and every minor and major are hand-cut tags.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).

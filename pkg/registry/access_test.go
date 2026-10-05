@@ -42,7 +42,7 @@ func parsePolicy(t *testing.T, statements []iam.GetPolicyDocumentStatement) poli
 }
 
 // A writer-role statement carries push actions for exactly the named roles —
-// the fine-grained publish identity the stable tier depends on (INF-469).
+// the fine-grained publish identity the stable tier depends on.
 func TestWriterRoleStatement(t *testing.T) {
 	effectAllow := string(iam.PolicyStatementEffectALLOW)
 	roles := []string{

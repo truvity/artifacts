@@ -168,7 +168,7 @@ func TestCodeArtifactReaderSharesTheReleaseSubject(t *testing.T) {
 }
 
 // A repository that cuts more than one release-tag shape (app: backend
-// `v*` plus SDK `sdk-typescript/v*` / `sdk-java/v*`, DMS-84) trusts the
+// `v*` plus SDK `sdk-typescript/v*` / `sdk-java/v*`) trusts the
 // extra tag refs on the READ-only reader role. The extras name the SAME
 // repository as the base subject — same prefix, different tag ref — so a
 // branch, a PR, or another repository still matches none. Without this,

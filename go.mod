@@ -8,7 +8,7 @@ require (
 	github.com/pulumi/pulumi-aws/sdk/v7 v7.48.0
 	github.com/pulumi/pulumi/sdk/v3 v3.267.0
 	github.com/stretchr/testify v1.12.1
-	github.com/truvity/k8s v0.9.0
+	github.com/truvity/k8s v0.8.0
 )
 
 require (
