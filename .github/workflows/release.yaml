@@ -21,4 +21,4 @@ jobs:
     permissions:
       contents: write
       packages: write
-    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@8a6f582944123bbce3bb79d8057dc05797b1db49 # v3.18.0
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@7d430d514a50982a5c19b9dd0af8c91fe7000589 # v3.26.0
