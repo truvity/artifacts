@@ -3,6 +3,16 @@
 Entries are written for someone deciding whether to bump: what changed for
 them, and for anything breaking, what to do.
 
+## v0.3.0
+
+`pkg/registry`: `DeployRelease` splits into `DeployReleaseShared` (the GitHub
+OIDC provider, the warm BuildKit cache, the CodeArtifact reader roles; returns
+the provider's ARN) and `DeployReleaseRoles` (the release role of the named
+projects, or of all), so a deployment can keep each project's release role in a
+stack of the project's own. `GitHubOIDCProviderARN` names the provider when it
+lives in another stack. `DeployRelease` is unchanged: the same resources with
+the same names. Not breaking.
+
 ## v0.2.0
 
 `pkg/registry`: `ChartRepository` and `ProjectComponents` (new) name the repositories of a project: its Helm charts under `charts/` first, then its images. A deployment no longer restates the `charts/<chart>` rule. No existing name changes.
