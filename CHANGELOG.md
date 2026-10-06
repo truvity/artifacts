@@ -5,6 +5,8 @@ them, and for anything breaking, what to do.
 
 ## Unreleased
 
+`pkg/registry`: `ChartRepository` and `ProjectComponents` (new) name the repositories of a project: its Helm charts under `charts/` first, then its images. A deployment no longer restates the `charts/<chart>` rule. No existing name changes.
+
 ## v0.1.0
 
 First release. Moved from a company deployment repository with no change to a
