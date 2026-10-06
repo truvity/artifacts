@@ -24,8 +24,8 @@ one ships with an alias in the same release.
 | | `aws:ecr/repositoryPolicy:RepositoryPolicy` | `<project>/<component>/policy/<region>` |
 | | export | `repository_<name with / and - as _>_url` |
 | `DeployS3` | `aws:s3/bucket:Bucket` | `artifacts-<tier>-<region>`, with `-lifecycle`, `-policy`, `-public-access`, `-encryption`, `-versioning` beside it |
-| `DeployRelease` | `aws:iam/openIdConnectProvider:OpenIdConnectProvider` | the caller's `OIDCProviderResourceName` |
-| | `aws:iam/role:Role` | `release-role-<project>` (the role is named `release-<project>`) |
+| `DeployRelease` = `DeployReleaseShared` + `DeployReleaseRoles` | `aws:iam/openIdConnectProvider:OpenIdConnectProvider` (shared) | the caller's `OIDCProviderResourceName` |
+| | `aws:iam/role:Role` (roles) | `release-role-<project>` (the role is named `release-<project>`) |
 | | `aws:iam/rolePolicy:RolePolicy` | `release-policy-<project>` |
 | `DeployCIBuildkitCache` | repository and lifecycle | `ci-buildkit-cache`, `ci-buildkit-cache-lifecycle` |
 | `DeployCodeArtifactReaderRoles` | role and attachment | `codeartifact-reader-<project>`, `codeartifact-reader-attach-<project>` (the role is named `release-<project>-codeartifact`) |

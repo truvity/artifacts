@@ -3,6 +3,7 @@ package registry
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
@@ -54,7 +55,101 @@ type (
 // PR build, or a workflow of any other project, cannot obtain a release
 // identity. Repository access is the ARN prefix {project}/*, which means a
 // project adding an image needs no policy change.
+//
+// It is DeployReleaseShared followed by DeployReleaseRoles for every
+// project. A deployment that keeps each project's role in a stack of the
+// project's own runs the two separately; the resource names are the same.
 func DeployRelease(c *pulumi.Context, logger *slog.Logger, cfg ReleaseStackConfig) error {
+	oidcProviderARN, err := DeployReleaseShared(c, logger, cfg)
+	if err != nil {
+		return err
+	}
+
+	return DeployReleaseRoles(c, logger, cfg, oidcProviderARN)
+}
+
+// DeployReleaseShared deploys what a registry account's publish identities
+// share: the GitHub OIDC provider, the warm BuildKit cache (always on the
+// stable tier, with BuildkitCache elsewhere) and, with CodeArtifactReaders,
+// the private npm reader roles. It returns the OIDC provider's ARN, which
+// DeployReleaseRoles trusts.
+func DeployReleaseShared(c *pulumi.Context, logger *slog.Logger, cfg ReleaseStackConfig) (pulumi.StringOutput, error) {
+	config := cfg.Config
+
+	if config.Release == nil || config.Release.SourceRepo == "" {
+		return pulumi.StringOutput{}, fmt.Errorf("registry config has no release.source_repo — the release stack has nothing to trust")
+	}
+
+	provider := cfg.AWSProvider
+
+	oidcProvider, err := EnsureGitHubOIDCProvider(c, logger, provider, cfg.OIDCProviderResourceName)
+	if err != nil {
+		return pulumi.StringOutput{}, err
+	}
+
+	// The stable tier's BuildKit warm cache: the same ci/buildkit-cache the
+	// preview tier keeps, here so a release on stable runners exports its
+	// layers with `--cache-to type=registry` and the next release starts
+	// warm even after a builder's volume is gone. Every release role may
+	// push to it — it holds layer blobs and cache manifests under mutable
+	// per-image tags, nothing a consumer ever pulls by name, so the grant
+	// widens no publish boundary; the lifecycle expires untagged layers in
+	// days.
+	if cfg.Kind == RepositoryKindStable {
+		if err := DeployCIBuildkitCache(c, logger, provider); err != nil {
+			return pulumi.StringOutput{}, err
+		}
+	}
+
+	// The BuildKit warm-cache repo outside the stable tier has its OWN gate,
+	// deliberately not nested inside anything else: it was nested once, and
+	// retiring the thing it was nested in silently un-declared it, so the
+	// next plan read "1 to delete" for the repository snapshot builds still
+	// export into (and cache-to failures are silent client-side).
+	if cfg.BuildkitCache && cfg.Kind != RepositoryKindStable {
+		if err := DeployCIBuildkitCache(c, logger, provider); err != nil {
+			return pulumi.StringOutput{}, err
+		}
+	}
+
+	// Private npm read for hosted-runner releases. Lives with the account's
+	// GitHub OIDC provider, which is what the reader roles trust.
+	if cfg.CodeArtifactReaders != nil {
+		if err := DeployCodeArtifactReaderRoles(c, logger, provider,
+			oidcProvider.Arn, cfg.AccountID, config, *cfg.CodeArtifactReaders); err != nil {
+			return pulumi.StringOutput{}, err
+		}
+	}
+
+	return oidcProvider.Arn, nil
+}
+
+// GitHubOIDCProviderARN is the ARN of an account's GitHub Actions OIDC
+// provider (IAM names it by its issuer host). DeployReleaseRoles takes it
+// when the provider is declared in another stack.
+func GitHubOIDCProviderARN(accountID string) string {
+	return fmt.Sprintf("arn:aws:iam::%s:oidc-provider/%s", accountID, githubOIDCProviderHost)
+}
+
+// DeployReleaseRoles deploys the release-{project} role of each named
+// project, or of every project with ECR repositories when none is named,
+// trusting the account's GitHub OIDC provider oidcProviderARN. Naming a
+// project that has no repositories is an error.
+//
+// STABLE ONLY. Project publish identities exist for the stable tier,
+// whose trust is pinned to the project's release tags. The preview tier
+// deliberately has NONE: snapshot pushes ride the CI pool's identity,
+// and people publish with their own SSO profile. A preview role would
+// carry an any-ref trust, admitting any branch or PR workflow of the
+// source repo to push to the preview registry; an unused credential
+// path is a liability, not a convenience.
+func DeployReleaseRoles(
+	c *pulumi.Context,
+	logger *slog.Logger,
+	cfg ReleaseStackConfig,
+	oidcProviderARN pulumi.StringOutput,
+	only ...string,
+) error {
 	ctx := c.Context()
 	config := cfg.Config
 
@@ -64,11 +159,6 @@ func DeployRelease(c *pulumi.Context, logger *slog.Logger, cfg ReleaseStackConfi
 
 	provider := cfg.AWSProvider
 	accountID := cfg.AccountID
-
-	oidcProvider, err := EnsureGitHubOIDCProvider(c, logger, provider, cfg.OIDCProviderResourceName)
-	if err != nil {
-		return err
-	}
 
 	var humanPatterns []string
 	if ps := config.Release.HumanSSOPermissionSet; ps != "" {
@@ -80,37 +170,26 @@ func DeployRelease(c *pulumi.Context, logger *slog.Logger, cfg ReleaseStackConfi
 
 	projects := make([]ProjectConfig, 0, len(config.Projects))
 
-	// STABLE ONLY. Project publish identities exist for the stable tier,
-	// whose trust is pinned to the project's release tags. The preview tier
-	// deliberately has NONE: snapshot pushes ride the CI pool's identity,
-	// and people publish with their own SSO profile. A preview role would
-	// carry an any-ref trust, admitting any branch or PR workflow of the
-	// source repo to push to the preview registry; an unused credential
-	// path is a liability, not a convenience.
 	if cfg.Kind == RepositoryKindStable {
 		for _, p := range config.Projects {
-			if len(p.RepositoryNames()) > 0 {
+			if len(p.RepositoryNames()) > 0 && (len(only) == 0 || slices.Contains(only, p.Name)) {
 				projects = append(projects, p)
 			}
 		}
 	}
 
+	for _, name := range only {
+		if !slices.ContainsFunc(projects, func(p ProjectConfig) bool { return p.Name == name }) {
+			return fmt.Errorf("release role for %q: no %s project with ECR repositories by that name", name, cfg.Kind)
+		}
+	}
+
 	sort.Slice(projects, func(i, j int) bool { return projects[i].Name < projects[j].Name })
 
-	// The stable tier's BuildKit warm cache: the same ci/buildkit-cache the
-	// preview tier keeps, here so a release on stable runners exports its
-	// layers with `--cache-to type=registry` and the next release starts
-	// warm even after a builder's volume is gone. Every release role may
-	// push to it — it holds layer blobs and cache manifests under mutable
-	// per-image tags, nothing a consumer ever pulls by name, so the grant
-	// widens no publish boundary; the lifecycle expires untagged layers in
-	// days.
+	// Every stable release role may push to the stable BuildKit cache
+	// (DeployReleaseShared).
 	var stableCacheARN string
 	if cfg.Kind == RepositoryKindStable {
-		if err := DeployCIBuildkitCache(c, logger, provider); err != nil {
-			return err
-		}
-
 		stableCacheARN = fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s", config.PrimaryRegion, accountID, CIBuildkitCacheRepo)
 	}
 
@@ -122,7 +201,7 @@ func DeployRelease(c *pulumi.Context, logger *slog.Logger, cfg ReleaseStackConfi
 			return err
 		}
 
-		_, err = DeployReleaseRole(c, logger, provider, oidcProvider.Arn, ReleaseRoleConfig{
+		_, err = DeployReleaseRole(c, logger, provider, oidcProviderARN, ReleaseRoleConfig{
 			Project:             p.Name,
 			SubjectPatterns:     []string{target.Subject},
 			PermissionsBoundary: cfg.PermissionsBoundaryARN,
@@ -138,27 +217,7 @@ func DeployRelease(c *pulumi.Context, logger *slog.Logger, cfg ReleaseStackConfi
 		}
 	}
 
-	// The BuildKit warm-cache repo outside the stable tier has its OWN gate,
-	// deliberately not nested inside anything else: it was nested once, and
-	// retiring the thing it was nested in silently un-declared it, so the
-	// next plan read "1 to delete" for the repository snapshot builds still
-	// export into (and cache-to failures are silent client-side).
-	if cfg.BuildkitCache && cfg.Kind != RepositoryKindStable {
-		if err := DeployCIBuildkitCache(c, logger, provider); err != nil {
-			return err
-		}
-	}
-
-	// Private npm read for hosted-runner releases. Lives with the account's
-	// GitHub OIDC provider, which is what the reader roles trust.
-	if cfg.CodeArtifactReaders != nil {
-		if err := DeployCodeArtifactReaderRoles(c, logger, provider,
-			oidcProvider.Arn, accountID, config, *cfg.CodeArtifactReaders); err != nil {
-			return err
-		}
-	}
-
-	logger.InfoContext(ctx, "release stack deployed",
+	logger.InfoContext(ctx, "release roles deployed",
 		slog.String("kind", string(cfg.Kind)),
 		slog.String("source_repo", config.Release.SourceRepo),
 		slog.Int("release_roles", len(projects)),

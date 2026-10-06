@@ -78,6 +78,11 @@ err := registry.DeployECR(ctx, logger, registry.DeployECRConfig{
 // One release role per project, trusted for its repository on its release tag:
 err = registry.DeployRelease(ctx, logger, registry.ReleaseStackConfig{ /* … */ })
 
+// Or a stack per project: the shared part once, each project's role in its own stack.
+arn, err := registry.DeployReleaseShared(ctx, logger, cfg)
+err = registry.DeployReleaseRoles(ctx, logger, cfg,
+	pulumi.String(registry.GitHubOIDCProviderARN(accountID)).ToStringOutput(), "shop")
+
 // In a cluster account: pull-through cache rules.
 err = ecrcache.Deploy(ctx, logger, ecrcache.Options{Provider: provider, Credentials: read})
 ```
