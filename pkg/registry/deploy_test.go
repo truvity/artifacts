@@ -2,6 +2,7 @@ package registry
 
 import (
 	"log/slog"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -124,6 +125,87 @@ func TestDeployReleaseStableDeploysOneRolePerProjectAndTheCache(t *testing.T) {
 		"aws:iam/rolePolicy:RolePolicy release-policy-shop",
 		"pulumi:providers:aws aws",
 	}, got, "a project with no repositories gets no role")
+}
+
+// A deployment that keeps each project's release role in a stack of its own
+// runs DeployReleaseShared once and DeployReleaseRoles per project: together
+// they declare exactly the resources DeployRelease does, with the same names.
+func TestDeployReleaseSplitPerProjectKeepsTheNames(t *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
+	cfg := func(provider *aws.Provider) ReleaseStackConfig {
+		return ReleaseStackConfig{
+			Kind: RepositoryKindStable,
+			Config: &Config{
+				PrimaryRegion: "eu-central-1",
+				Projects: []ProjectConfig{
+					{Name: "shop", ECR: []string{"api"}}, {Name: "blog", ECR: []string{"web"}}, {Name: "tool"},
+				},
+				Release: &ReleaseConfig{SourceRepo: "acme/mono", SubjectPrefix: "repo:acme/mono"},
+			},
+			AccountID:                "111122223333",
+			AWSProvider:              provider,
+			OIDCProviderResourceName: "oidc",
+		}
+	}
+
+	whole := run(t, func(c *pulumi.Context, provider *aws.Provider) error {
+		return DeployRelease(c, logger, cfg(provider))
+	})
+
+	shared := run(t, func(c *pulumi.Context, provider *aws.Provider) error {
+		_, err := DeployReleaseShared(c, logger, cfg(provider))
+
+		return err
+	})
+
+	var perProject []string
+
+	for _, project := range []string{"shop", "blog"} {
+		got := run(t, func(c *pulumi.Context, provider *aws.Provider) error {
+			arn := pulumi.String(GitHubOIDCProviderARN("111122223333")).ToStringOutput()
+
+			return DeployReleaseRoles(c, logger, cfg(provider), arn, project)
+		})
+		assert.Equal(t, []string{
+			"aws:iam/role:Role release-role-" + project,
+			"aws:iam/rolePolicy:RolePolicy release-policy-" + project,
+			"pulumi:providers:aws aws",
+		}, got)
+
+		perProject = append(perProject, got[:2]...)
+	}
+
+	split := slices.Concat(shared, perProject)
+	sort.Strings(split)
+	assert.Equal(t, whole, split)
+}
+
+func TestDeployReleaseRolesRefusesAProjectWithoutRepositories(t *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
+
+	err := pulumi.RunErr(func(c *pulumi.Context) error {
+		provider, err := aws.NewProvider(c, "aws", &aws.ProviderArgs{})
+		if err != nil {
+			return err
+		}
+
+		return DeployReleaseRoles(c, logger, ReleaseStackConfig{
+			Kind: RepositoryKindStable,
+			Config: &Config{
+				PrimaryRegion: "eu-central-1",
+				Projects:      []ProjectConfig{{Name: "tool"}},
+				Release:       &ReleaseConfig{SourceRepo: "acme/mono", SubjectPrefix: "repo:acme/mono"},
+			},
+			AccountID:   "111122223333",
+			AWSProvider: provider,
+		}, pulumi.String(GitHubOIDCProviderARN("111122223333")).ToStringOutput(), "tool")
+	}, pulumi.WithMocks("test", "test", &recorder{}))
+	require.ErrorContains(t, err, `release role for "tool"`)
+}
+
+func TestGitHubOIDCProviderARN(t *testing.T) {
+	assert.Equal(t, "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com",
+		GitHubOIDCProviderARN("111122223333"))
 }
 
 // The preview tier has no publish identities: snapshot pushes ride the CI
