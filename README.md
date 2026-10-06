@@ -79,7 +79,7 @@ err := registry.DeployECR(ctx, logger, registry.DeployECRConfig{
 err = registry.DeployRelease(ctx, logger, registry.ReleaseStackConfig{ /* … */ })
 
 // Or a stack per project: the shared part once, each project's role in its own stack.
-arn, err := registry.DeployReleaseShared(ctx, logger, cfg)
+_, err = registry.DeployReleaseShared(ctx, logger, cfg) // in the shared stack
 err = registry.DeployReleaseRoles(ctx, logger, cfg,
 	pulumi.String(registry.GitHubOIDCProviderARN(accountID)).ToStringOutput(), "shop")
 
