@@ -30,6 +30,8 @@ one ships with an alias in the same release.
 | `DeployCIBuildkitCache` | repository and lifecycle | `ci-buildkit-cache`, `ci-buildkit-cache-lifecycle` |
 | `DeployCodeArtifactReaderRoles` | role and attachment | `codeartifact-reader-<project>`, `codeartifact-reader-attach-<project>` (the role is named `release-<project>-codeartifact`) |
 | `ecrcache.Deploy` | component | `ecr-cache`, with the children `ptc-rule-<prefix>`, `ptc-secret-<prefix>`, `ptc-secret-version-<prefix>` |
+| `codeartifact.Deploy` | `aws:codeartifact/domain:Domain` | `codeartifact-<domain>` |
+| | `aws:codeartifact/repository:Repository` | `codeartifact-<domain>-<repository>` |
 
 The functions register their resources directly under the caller's stack, not
 under a component: adopting a stack that already had them keeps every URN

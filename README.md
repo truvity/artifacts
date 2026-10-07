@@ -12,6 +12,7 @@ public or private, who may write, how it is named and versioned).
 | Go module `github.com/truvity/artifacts` | `go get github.com/truvity/artifacts@v0.1.0` |
 | `pkg/registry` — ECR repositories per project and tier, lifecycle, repository policies, release roles (GitHub OIDC), the warm BuildKit cache, read-only CodeArtifact reader roles, the Lambda archive bucket | Go package, Pulumi functions |
 | `pkg/ecrcache` — the standard ECR pull-through cache rules, credentials injected | Go package, over `github.com/truvity/k8s` |
+| `pkg/codeartifact` — a CodeArtifact domain and its repositories (upstreams, external connection), adoption of existing ones by import | Go package, Pulumi functions |
 | The kind table, naming and versioning | [docs/kinds.md](docs/kinds.md) |
 | What the module promises (inputs, resource names, tiers, release identity) | [docs/contract.md](docs/contract.md) |
 
@@ -129,9 +130,8 @@ tracked files and runs in the gate; its only exceptions are the ARN grammar unde
 ## Status
 
 v0: the API may still move in a minor release, and every move is a `Breaking:`
-bullet in the [CHANGELOG](CHANGELOG.md). Not here yet: CodeArtifact domains and
-repositories as code (the reader roles are), and a registry mirror for clusters
-off AWS.
+bullet in the [CHANGELOG](CHANGELOG.md). Not here yet: a registry mirror for
+clusters off AWS.
 
 ## Development
 
