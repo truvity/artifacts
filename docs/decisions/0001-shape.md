@@ -26,6 +26,5 @@ roles, a pull-through cache) is needed wherever artifacts are published.
 
 ## Not here
 
-CodeArtifact domains and repositories (the readers are; the domain is
-infrastructure to be adopted by a later release), and a mirror for clusters off
-AWS.
+A mirror for clusters off AWS. (CodeArtifact domains and repositories were
+listed here until `pkg/codeartifact` brought them in.)
