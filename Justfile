@@ -15,10 +15,12 @@ test:
     go test ./...
 
 # Run linters. `config verify` first: `run` accepts unknown top-level
-# keys silently.
+# keys silently. GOTOOLCHAIN=local: golangci-lint cannot read the export
+# data of a newer downloaded toolchain (go.mod `toolchain`), so lint with the
+# devbox Go, as observability, gitops and cloudflare do.
 lint:
     golangci-lint config verify
-    golangci-lint run ./...
+    GOTOOLCHAIN=local golangci-lint run ./...
 
 # Reachable Go advisories (security.yaml, daily). NOT part of `check`: a
 # standard-library advisory with no released fix would turn every pull
