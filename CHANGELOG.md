@@ -5,6 +5,8 @@ them, and for anything breaking, what to do.
 
 ## Unreleased
 
+Security: the Go toolchain is now go1.27.2 and `golang.org/x/net` v0.60.0, which close govulncheck findings GO-2026-6610, -6611, -6612, -6613 and -6617 (`net/http` and HTTP/2 in the standard library and in x/net). No API change.
+
 `pkg/registryspec` (new): the repository naming rules (`ChartRepositoryPrefix`, `ChartRepository`, `ProjectComponents`) in a package that imports the standard library only, so a config layer that only names a project's repositories no longer links Pulumi, `pulumi-aws` and the AWS SDK. `pkg/registry` re-exports all three unchanged; a test fails if `pkg/registryspec` ever gains a non-standard-library import. Additive, nothing existing changes.
 
 ## v0.4.0
