@@ -3,6 +3,10 @@
 Entries are written for someone deciding whether to bump: what changed for
 them, and for anything breaking, what to do.
 
+## Unreleased
+
+`pkg/registryspec` (new): the repository naming rules (`ChartRepositoryPrefix`, `ChartRepository`, `ProjectComponents`) in a package that imports the standard library only, so a config layer that only names a project's repositories no longer links Pulumi, `pulumi-aws` and the AWS SDK. `pkg/registry` re-exports all three unchanged; a test fails if `pkg/registryspec` ever gains a non-standard-library import. Additive, nothing existing changes.
+
 ## v0.4.0
 
 `pkg/codeartifact` (new): `Deploy` declares a CodeArtifact domain and its repositories (upstreams in lookup order, at most one external connection each, the caller's KMS key or the AWS-managed one, optional tags). `Config.Adopt` imports a domain and repositories that already exist by their ARNs, so the first deploy imports them and changes nothing. The domain and repositories are protected unless `Config.Protect` points at false. Resource names: `codeartifact-<domain>` and `codeartifact-<domain>-<repository>`. Nothing existing changes.
