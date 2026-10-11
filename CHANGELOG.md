@@ -5,6 +5,8 @@ them, and for anything breaking, what to do.
 
 ## Unreleased
 
+Security: `github.com/go-git/go-git/v6` v6.0.0-alpha.5 (indirect, through the Pulumi SDK; `go-billy/v6` follows to v6.0.0-alpha.2), which closes GHSA-hc8v-wwc9-vgxm (worktree operations may follow symlinks, high) and GHSA-qgq7-7hm3-q39j (malicious reference names may write outside the reference storage, moderate).
+
 Security: the Go toolchain is now go1.27.2 and `golang.org/x/net` v0.60.0, which close govulncheck findings GO-2026-6610, -6611, -6612, -6613 and -6617 (`net/http` and HTTP/2 in the standard library and in x/net). No API change.
 
 `pkg/registryspec` (new): the repository naming rules (`ChartRepositoryPrefix`, `ChartRepository`, `ProjectComponents`) in a package that imports the standard library only, so a config layer that only names a project's repositories no longer links Pulumi, `pulumi-aws` and the AWS SDK. `pkg/registry` re-exports all three unchanged; a test fails if `pkg/registryspec` ever gains a non-standard-library import. Additive, nothing existing changes.
