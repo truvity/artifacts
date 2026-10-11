@@ -3,7 +3,7 @@
 Entries are written for someone deciding whether to bump: what changed for
 them, and for anything breaking, what to do.
 
-## Unreleased
+## v0.5.0
 
 Security: `github.com/go-git/go-git/v6` v6.0.0-alpha.5 (indirect, through the Pulumi SDK; `go-billy/v6` follows to v6.0.0-alpha.2), which closes GHSA-hc8v-wwc9-vgxm (worktree operations may follow symlinks, high) and GHSA-qgq7-7hm3-q39j (malicious reference names may write outside the reference storage, moderate).
 
