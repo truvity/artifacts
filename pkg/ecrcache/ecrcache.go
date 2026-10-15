@@ -25,6 +25,7 @@
 package ecrcache
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -163,4 +164,34 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, opts Options) error {
 	}
 
 	return nil
+}
+
+// PullThroughPolicy is the IAM policy document (JSON) that lets a principal
+// pull an image through the account's pull-through cache rule for prefix: the
+// first pull of a new tag imports it (BatchImportUpstreamImage creates the
+// local repository with CreateRepository), later pulls just read.
+// GetAuthorizationToken is not included: a role that pushes already carries it.
+func PullThroughPolicy(region, accountID, prefix string) (string, error) {
+	doc := map[string]any{
+		"Version": "2012-10-17",
+		"Statement": []map[string]any{{
+			"Sid":    "PullThroughCache",
+			"Effect": "Allow",
+			"Action": []string{
+				"ecr:BatchImportUpstreamImage",
+				"ecr:CreateRepository",
+				"ecr:BatchGetImage",
+				"ecr:GetDownloadUrlForLayer",
+				"ecr:BatchCheckLayerAvailability",
+			},
+			"Resource": fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s/*", region, accountID, prefix),
+		}},
+	}
+
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("encode pull-through policy: %w", err)
+	}
+
+	return string(raw), nil
 }

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -374,4 +375,53 @@ func CompareSubjects(targets []ReleaseTarget, live map[string]string) []SubjectD
 	}
 
 	return drifts
+}
+
+// SubjectFetcher answers the sub_claim_prefix GitHub signs for a repository
+// ("owner/repo"): the "sub_claim_prefix" field of
+// /repos/{owner}/{repo}/actions/oidc/customization/sub.
+//
+// That field, not use_immutable_subject, is the signal: a repository can
+// report use_immutable_subject false while GitHub signs its tokens with
+// immutable identifiers anyway. The flag governs whether the immutable form
+// is required; the prefix is what gets signed.
+type SubjectFetcher func(ctx context.Context, repo string) (string, error)
+
+// CheckReleaseSubjects verifies every target's OIDC subject prefix against
+// what GitHub signs. A wrong prefix is invisible everywhere except at tag
+// time, where it surfaces as "Not authorized to perform
+// sts:AssumeRoleWithWebIdentity", naming neither the claim nor the reason;
+// this moves the discovery to review time.
+//
+// It asks once per repository, not per project: projects of one repository
+// share the answer. It returns the signed prefix per repository (sorted
+// names alongside, for stable output) and the drifts; it never rewrites
+// configuration, since the prefix is a trust boundary a human should read in
+// a diff.
+func CheckReleaseSubjects(ctx context.Context, targets []ReleaseTarget, fetch SubjectFetcher) (repos []string, live map[string]string, drifts []SubjectDrift, err error) {
+	seen := map[string]struct{}{}
+
+	for _, t := range targets {
+		if _, ok := seen[t.Repo]; ok {
+			continue
+		}
+
+		seen[t.Repo] = struct{}{}
+		repos = append(repos, t.Repo)
+	}
+
+	sort.Strings(repos)
+
+	live = make(map[string]string, len(repos))
+
+	for _, repo := range repos {
+		prefix, ferr := fetch(ctx, repo)
+		if ferr != nil {
+			return repos, live, nil, fmt.Errorf("read the signed subject prefix of %s: %w", repo, ferr)
+		}
+
+		live[repo] = prefix
+	}
+
+	return repos, live, CompareSubjects(targets, live), nil
 }

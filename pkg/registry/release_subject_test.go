@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -316,4 +318,36 @@ func TestValidateCodeArtifactReaderExtraTags(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestCheckReleaseSubjectsAsksOncePerRepository(t *testing.T) {
+	t.Parallel()
+
+	targets := []ReleaseTarget{
+		{Project: "a", Repo: "acme/mono", Prefix: "repo:acme/mono"},
+		{Project: "b", Repo: "acme/mono", Prefix: "repo:acme/mono"},
+		{Project: "c", Repo: "acme/c", Prefix: "repo:acme/c"},
+	}
+	calls := map[string]int{}
+
+	repos, live, drifts, err := CheckReleaseSubjects(t.Context(), targets, func(_ context.Context, repo string) (string, error) {
+		calls[repo]++
+
+		if repo == "acme/c" {
+			return "repo:acme@1/c@2", nil
+		}
+
+		return "repo:acme/mono", nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"acme/c", "acme/mono"}, repos)
+	assert.Equal(t, map[string]int{"acme/mono": 1, "acme/c": 1}, calls)
+	assert.Equal(t, "repo:acme@1/c@2", live["acme/c"])
+	require.Len(t, drifts, 1)
+	assert.Equal(t, "c", drifts[0].Project)
+
+	_, _, _, err = CheckReleaseSubjects(t.Context(), targets, func(context.Context, string) (string, error) {
+		return "", errors.New("boom")
+	})
+	require.ErrorContains(t, err, "acme/c")
 }
