@@ -398,7 +398,9 @@ type SubjectFetcher func(ctx context.Context, repo string) (string, error)
 // names alongside, for stable output) and the drifts; it never rewrites
 // configuration, since the prefix is a trust boundary a human should read in
 // a diff.
-func CheckReleaseSubjects(ctx context.Context, targets []ReleaseTarget, fetch SubjectFetcher) (repos []string, live map[string]string, drifts []SubjectDrift, err error) {
+func CheckReleaseSubjects(
+	ctx context.Context, targets []ReleaseTarget, fetch SubjectFetcher,
+) (repos []string, live map[string]string, drifts []SubjectDrift, err error) {
 	seen := map[string]struct{}{}
 
 	for _, t := range targets {

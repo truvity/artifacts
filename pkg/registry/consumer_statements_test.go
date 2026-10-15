@@ -14,22 +14,28 @@ func TestCodeArtifactReadStatementsJSON(t *testing.T) {
 
 	raw, err := json.Marshal(CodeArtifactReadStatements())
 	require.NoError(t, err)
-	require.JSONEq(t, `[
-	 {"Sid":"CodeArtifactRead","Effect":"Allow","Action":["codeartifact:GetAuthorizationToken","codeartifact:GetRepositoryEndpoint","codeartifact:ReadFromRepository"],"Resource":"*"},
-	 {"Sid":"CodeArtifactBearerToken","Effect":"Allow","Action":"sts:GetServiceBearerToken","Resource":"*","Condition":{"StringEquals":{"sts:AWSServiceName":"codeartifact.amazonaws.com"}}}
-	]`, string(raw))
+	require.Equal(t, `[{"Action":["codeartifact:GetAuthorizationToken","codeartifact:GetRepositoryEndpoint",`+
+		`"codeartifact:ReadFromRepository"],"Effect":"Allow","Resource":"*","Sid":"CodeArtifactRead"},`+
+		`{"Action":"sts:GetServiceBearerToken","Condition":{"StringEquals":{"sts:AWSServiceName":`+
+		`"codeartifact.amazonaws.com"}},"Effect":"Allow","Resource":"*","Sid":"CodeArtifactBearerToken"}]`, string(raw))
 }
 
 func TestECRPreviewStatementsJSON(t *testing.T) {
 	t.Parallel()
 
+	const repo = "arn:aws:ecr:eu-central-1:111122223333:repository/"
+
 	raw, err := json.Marshal(ECRPreviewStatements("eu-central-1", "111122223333", []string{"proj", "other/x"}))
 	require.NoError(t, err)
 	require.Equal(t, `[{"Action":"ecr:GetAuthorizationToken","Effect":"Allow","Resource":"*","Sid":"EcrAuth"},`+
-		`{"Action":["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer","ecr:BatchCheckLayerAvailability","ecr:BatchImportUpstreamImage","ecr:CreateRepository"],"Effect":"Allow",`+
-		`"Resource":["arn:aws:ecr:eu-central-1:111122223333:repository/docker-hub/*","arn:aws:ecr:eu-central-1:111122223333:repository/ghcr/*","arn:aws:ecr:eu-central-1:111122223333:repository/quay/*","arn:aws:ecr:eu-central-1:111122223333:repository/github/*"],"Sid":"EcrPullThroughRead"},`+
-		`{"Action":["ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload","ecr:BatchCheckLayerAvailability","ecr:BatchGetImage","ecr:GetDownloadUrlForLayer","ecr:DescribeRepositories","ecr:ListImages","ecr:DescribeImages"],"Effect":"Allow",`+
-		`"Resource":["arn:aws:ecr:eu-central-1:111122223333:repository/proj/*","arn:aws:ecr:eu-central-1:111122223333:repository/other/x/*","arn:aws:ecr:eu-central-1:111122223333:repository/ci/buildkit-cache"],"Sid":"EcrPreviewPush"}]`, string(raw))
+		`{"Action":["ecr:BatchGetImage","ecr:GetDownloadUrlForLayer","ecr:BatchCheckLayerAvailability",`+
+		`"ecr:BatchImportUpstreamImage","ecr:CreateRepository"],"Effect":"Allow",`+
+		`"Resource":["`+repo+`docker-hub/*","`+repo+`ghcr/*","`+repo+`quay/*","`+repo+`github/*"],`+
+		`"Sid":"EcrPullThroughRead"},`+
+		`{"Action":["ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload",`+
+		`"ecr:BatchCheckLayerAvailability","ecr:BatchGetImage","ecr:GetDownloadUrlForLayer",`+
+		`"ecr:DescribeRepositories","ecr:ListImages","ecr:DescribeImages"],"Effect":"Allow",`+
+		`"Resource":["`+repo+`proj/*","`+repo+`other/x/*","`+repo+`ci/buildkit-cache"],"Sid":"EcrPreviewPush"}]`, string(raw))
 }
 
 func TestECRPreviewStatementsWithoutPushOmitsThePushStatement(t *testing.T) {
