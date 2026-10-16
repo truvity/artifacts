@@ -3,7 +3,7 @@
 Entries are written for someone deciding whether to bump: what changed for
 them, and for anything breaking, what to do.
 
-## Unreleased
+## v0.7.0
 
 **Breaking (`pkg/ecrcache`): `Options.LegacyTopLevel` is removed.** It set truvity/k8s pullthroughcache's `LegacyTopLevel`, an alias from the URN each rule, secret and version had directly under the stack before it was wrapped in the component. A stack applied with the component holds the component URNs, so the alias resolves to nothing. Apply every stack that sets it with your current version, then drop the field: a preview shows no create or delete.
 
