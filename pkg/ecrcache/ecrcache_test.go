@@ -56,7 +56,6 @@ func TestDeployDeclaresRulesAndSecrets(t *testing.T) {
 
 				return "value-of-" + field, nil
 			},
-			LegacyTopLevel: true,
 		})
 	}, pulumi.WithMocks("test", "test", rec))
 	require.NoError(t, err)

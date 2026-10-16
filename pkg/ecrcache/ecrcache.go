@@ -102,11 +102,6 @@ type Options struct {
 
 	// Credentials reads the credential fields of the upstreams that need one.
 	Credentials CredentialReader
-
-	// LegacyTopLevel adopts rules, secrets and versions that were registered
-	// directly under the stack before they were wrapped in the component: each
-	// child carries an alias from there, so state adopts it with no replace.
-	LegacyTopLevel bool
 }
 
 // Deploy declares the pull-through cache rules (Upstreams) in the account of
@@ -117,8 +112,7 @@ func Deploy(c *pulumi.Context, logger *slog.Logger, opts Options) error {
 	}
 
 	args := &pullthroughcache.Args{
-		Credentials:    map[string]pullthroughcache.Credentials{},
-		LegacyTopLevel: opts.LegacyTopLevel,
+		Credentials: map[string]pullthroughcache.Credentials{},
 	}
 
 	for _, upstream := range Upstreams {
