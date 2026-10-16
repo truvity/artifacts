@@ -3,6 +3,10 @@
 Entries are written for someone deciding whether to bump: what changed for
 them, and for anything breaking, what to do.
 
+## Unreleased
+
+**Breaking (`pkg/ecrcache`): `Options.LegacyTopLevel` is removed.** It set truvity/k8s pullthroughcache's `LegacyTopLevel`, an alias from the URN each rule, secret and version had directly under the stack before it was wrapped in the component. A stack applied with the component holds the component URNs, so the alias resolves to nothing. Apply every stack that sets it with your current version, then drop the field: a preview shows no create or delete.
+
 ## v0.6.0
 
 `pkg/registry`: `CodeArtifactReadStatements` and `ECRPreviewStatements` (new) are the IAM statements of the CodeArtifact read surface and of the preview-ECR surface (registry auth, pull through the caches, snapshot push); the account, region and push prefixes are parameters. `CheckReleaseSubjects` and `SubjectFetcher` (new) check every release role's OIDC subject against the `sub_claim_prefix` GitHub signs, asking once per repository, with the fetch left to the caller. `pkg/ecrcache`: `PullThroughPolicy` (new) is the consumer policy document for a pull-through prefix, next to the rules. Additive, nothing existing changes.
