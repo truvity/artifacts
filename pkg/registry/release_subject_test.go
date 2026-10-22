@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -350,4 +351,72 @@ func TestCheckReleaseSubjectsAsksOncePerRepository(t *testing.T) {
 		return "", errors.New("boom")
 	})
 	require.ErrorContains(t, err, "acme/c")
+}
+
+// workflow_refs rides the project's override into the target; a project
+// without it, and the estate default, carry none.
+func TestReleaseSubjectCarriesWorkflowRefs(t *testing.T) {
+	t.Parallel()
+
+	refs := []string{"acme/app/.github/workflows/release.yaml@refs/tags/v*"}
+	cfg := &ReleaseConfig{
+		SourceRepo:    "acme/mono",
+		SubjectPrefix: "repo:acme/mono",
+		Overrides: map[string]ReleaseOverride{"app": {
+			SourceRepo:    "acme/app",
+			TagPattern:    "v*",
+			SubjectPrefix: "repo:acme/app",
+			WorkflowRefs:  refs,
+		}},
+	}
+
+	got, err := releaseSubject(cfg, "app")
+	require.NoError(t, err)
+	assert.Equal(t, refs, got.WorkflowRefs)
+
+	other, err := releaseSubject(cfg, "svc")
+	require.NoError(t, err)
+	assert.Empty(t, other.WorkflowRefs, "an override must not leak to another project")
+}
+
+func TestReleaseSubjectRefusesBadWorkflowRefs(t *testing.T) {
+	t.Parallel()
+
+	for name, refs := range map[string][]string{
+		"empty":      {""},
+		"whitespace": {"acme/app/.github/workflows/release.yaml @refs/tags/v*"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := &ReleaseConfig{
+				SourceRepo:    "acme/mono",
+				SubjectPrefix: "repo:acme/mono",
+				Overrides:     map[string]ReleaseOverride{"app": {WorkflowRefs: refs}},
+			}
+
+			_, err := releaseSubject(cfg, "app")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "release.overrides.app.workflow_refs")
+
+			// Config.Validate refuses it too, at load time.
+			err = (&Config{
+				PrimaryRegion: "eu-central-1",
+				Projects:      []ProjectConfig{{Name: "app"}},
+				Release:       cfg,
+			}).Validate()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "release.overrides.app.workflow_refs")
+		})
+	}
+}
+
+// The key is spelled workflow_refs in the registry YAML (the loader lives
+// in the caller, so the tag is what pins the spelling here).
+func TestReleaseOverrideWorkflowRefsYAMLKey(t *testing.T) {
+	t.Parallel()
+
+	field, ok := reflect.TypeFor[ReleaseOverride]().FieldByName("WorkflowRefs")
+	require.True(t, ok)
+	assert.Equal(t, "workflow_refs,omitempty", field.Tag.Get("yaml"))
 }

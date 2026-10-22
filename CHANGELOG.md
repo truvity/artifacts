@@ -3,6 +3,10 @@
 Entries are written for someone deciding whether to bump: what changed for
 them, and for anything breaking, what to do.
 
+## Unreleased
+
+`pkg/registry`: a release role's GitHub-OIDC trust can now also require the `job_workflow_ref` claim. `ReleaseRoleConfig.WorkflowRefPatterns` (new, optional) adds `token.actions.githubusercontent.com:job_workflow_ref` to the CI statement's `StringLike`, and the registry config takes it per project as `release.overrides.<project>.workflow_refs: [..]` (literal patterns, carried on `ReleaseTarget.WorkflowRefs`). Empty or absent adds no condition: the trust policy is byte for byte the one built from `sub` alone, so nothing existing changes and no project sets it yet. For a job in a reusable workflow the claim names the called workflow, not the caller's file, and a value that matches no real token locks the project's releases out; verify one with a real assume from the project's own release workflow in a non-production account before setting it. Entries that are empty or contain whitespace, and a `WorkflowRefPatterns` on a role with no `SubjectPatterns`, are refused. The CodeArtifact reader role is not conditioned by it.
+
 ## v0.7.0
 
 **Breaking (`pkg/ecrcache`): `Options.LegacyTopLevel` is removed.** It set truvity/k8s pullthroughcache's `LegacyTopLevel`, an alias from the URN each rule, secret and version had directly under the stack before it was wrapped in the component. A stack applied with the component holds the component URNs, so the alias resolves to nothing. Apply every stack that sets it with your current version, then drop the field: a preview shows no create or delete.

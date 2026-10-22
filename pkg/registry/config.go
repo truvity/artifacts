@@ -159,6 +159,33 @@ type (
 		//
 		// Empty derives "repo:{SourceRepo or release.source_repo}".
 		SubjectPrefix string `yaml:"subject_prefix,omitempty"`
+
+		// WorkflowRefs are literal patterns for the OIDC claim
+		// `job_workflow_ref` that the project's release role also
+		// requires, e.g.
+		// "acme/app/.github/workflows/release.yaml@refs/tags/v*". They
+		// narrow the role from "any workflow of the repository on a
+		// matching tag" to "this workflow file". Absent (the default)
+		// adds no condition: the trust policy is exactly the one built
+		// from the subject.
+		//
+		// The caveat that makes this unsafe to guess: for a job in a
+		// REUSABLE workflow the claim names the CALLED workflow
+		// ("acme/ci-workflows/.github/workflows/release-private.yaml@refs/tags/<ci-workflows tag>"),
+		// not the caller's file, and its ref is the called workflow's own,
+		// not the tag that triggered the run. A value that matches no real
+		// token locks the project's releases out, and the failure is a bare
+		// "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+		//
+		// So verify a value before it reaches production: read the claim
+		// from a real run of the project's own release workflow, and prove
+		// the pattern with an actual assume from that workflow in a
+		// non-production account first. Entries may not be empty or contain
+		// whitespace.
+		//
+		// Applies to the project's publish role only; the CodeArtifact
+		// reader role is not conditioned by it.
+		WorkflowRefs []string `yaml:"workflow_refs,omitempty"`
 	}
 
 	// ProjectConfig defines a project and its components
@@ -211,6 +238,22 @@ func (c *Config) Validate() error {
 		}
 		if err := validateCodeArtifactReaderEnvironments(c.Release); err != nil {
 			return err
+		}
+		if err := validateReleaseWorkflowRefs(c.Release); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateReleaseWorkflowRefs refuses a workflow_refs entry that can never
+// match a token (empty, or containing whitespace), so a typo fails the
+// config load rather than a release.
+func validateReleaseWorkflowRefs(release *ReleaseConfig) error {
+	for project, o := range release.Overrides {
+		if err := validateWorkflowRefPatterns(o.WorkflowRefs); err != nil {
+			return fmt.Errorf("release.overrides.%s.workflow_refs: %w", project, err)
 		}
 	}
 
