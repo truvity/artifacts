@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
+	"unicode"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
@@ -57,6 +59,25 @@ type (
 		// is unusable from CI — deliberate for a role that only humans
 		// should assume.
 		SubjectPatterns []string
+
+		// WorkflowRefPatterns are patterns for the OIDC claim
+		// `job_workflow_ref`, e.g.
+		// "owner/repo/.github/workflows/release.yaml@refs/tags/v*". When
+		// non-empty the CI statement additionally requires the claim to
+		// match one of them, so a token signed for the right repository and
+		// tag but for a DIFFERENT workflow file cannot assume the role.
+		//
+		// For a job in a reusable workflow the claim names the CALLED
+		// workflow ("owner/ci-workflows/.github/workflows/release.yaml@<its
+		// ref>"), not the caller's file, and the ref is the called
+		// workflow's own. A wrong value matches no token and locks the
+		// project's releases out.
+		//
+		// Empty means no condition: the trust policy is the one built from
+		// SubjectPatterns alone, byte for byte. Meaningless without
+		// SubjectPatterns (there is no CI statement to condition) and
+		// refused then.
+		WorkflowRefPatterns []string
 
 		// RepositoryARNs are the ECR repositories this role may push to.
 		RepositoryARNs []string
@@ -195,13 +216,30 @@ func DeployReleaseRole(
 }
 
 // buildReleaseTrustPolicy emits the two trust statements: GitHub Actions
-// (web identity, pinned by `sub`) and human SSO admins. A role with no
+// (web identity, pinned by `sub`, and by `job_workflow_ref` when
+// WorkflowRefPatterns is set) and human SSO admins. A role with no
 // subject patterns gets no CI statement at all — an unconditional
 // federated trust would let ANY repository on GitHub assume it.
 func buildReleaseTrustPolicy(providerARN string, cfg ReleaseRoleConfig) (string, error) {
 	statements := make([]map[string]any, 0, 2)
 
+	if err := validateWorkflowRefPatterns(cfg.WorkflowRefPatterns); err != nil {
+		return "", fmt.Errorf("release role %s: %w", cfg.Project, err)
+	}
+
+	if len(cfg.WorkflowRefPatterns) > 0 && len(cfg.SubjectPatterns) == 0 {
+		return "", fmt.Errorf("release role %s: workflow ref patterns without subject patterns condition nothing (no CI statement)", cfg.Project)
+	}
+
 	if len(cfg.SubjectPatterns) > 0 {
+		like := map[string]any{
+			githubOIDCProviderHost + ":sub": cfg.SubjectPatterns,
+		}
+
+		if len(cfg.WorkflowRefPatterns) > 0 {
+			like[githubOIDCProviderHost+":job_workflow_ref"] = cfg.WorkflowRefPatterns
+		}
+
 		statements = append(statements, map[string]any{
 			polSid:    "GitHubActionsOIDC",
 			polEffect: polAllow,
@@ -213,9 +251,7 @@ func buildReleaseTrustPolicy(providerARN string, cfg ReleaseRoleConfig) (string,
 				polStringEq: map[string]any{
 					githubOIDCProviderHost + ":aud": githubOIDCAudience,
 				},
-				"StringLike": map[string]any{
-					githubOIDCProviderHost + ":sub": cfg.SubjectPatterns,
-				},
+				"StringLike": like,
 			},
 		})
 	}
@@ -255,6 +291,24 @@ func buildReleaseTrustPolicy(providerARN string, cfg ReleaseRoleConfig) (string,
 	}
 
 	return string(raw), nil
+}
+
+// validateWorkflowRefPatterns refuses job_workflow_ref patterns that can
+// never be right: an empty string (IAM StringLike on "" matches only an
+// absent claim, which is not what anyone meant) and anything containing
+// whitespace (no workflow path or ref carries it, so it would silently match
+// nothing and lock the releases out).
+func validateWorkflowRefPatterns(patterns []string) error {
+	for _, pattern := range patterns {
+		switch {
+		case pattern == "":
+			return fmt.Errorf("empty workflow ref pattern")
+		case strings.IndexFunc(pattern, unicode.IsSpace) >= 0:
+			return fmt.Errorf("workflow ref pattern %q contains whitespace", pattern)
+		}
+	}
+
+	return nil
 }
 
 // buildReleasePermissionPolicy grants login (account-wide by necessity) and

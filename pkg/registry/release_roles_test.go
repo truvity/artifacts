@@ -204,3 +204,111 @@ func TestReleasePermissionPolicy(t *testing.T) {
 		}
 	}
 }
+
+// With no workflow ref patterns the CI statement is the one built from
+// `sub` alone, byte for byte: the field is opt-in and must not change a
+// deployed policy.
+func TestReleaseTrustPolicy_NoWorkflowRefIsToday(t *testing.T) {
+	base := ReleaseRoleConfig{
+		Project:         "billing",
+		SubjectPatterns: []string{"repo:acme/billing:ref:refs/tags/*"},
+	}
+
+	raw, err := buildReleaseTrustPolicy(testProviderARN, base)
+	if err != nil {
+		t.Fatalf("buildReleaseTrustPolicy: %v", err)
+	}
+
+	const want = `{"Statement":[{"Action":"sts:AssumeRoleWithWebIdentity",` +
+		`"Condition":{"StringEquals":{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com"},` +
+		`"StringLike":{"token.actions.githubusercontent.com:sub":["repo:acme/billing:ref:refs/tags/*"]}},` +
+		`"Effect":"Allow","Principal":{"Federated":"` + testProviderARN + `"},"Sid":"GitHubActionsOIDC"}],` +
+		`"Version":"2012-10-17"}`
+	if raw != want {
+		t.Errorf("policy changed with the field empty:\n got %s\nwant %s", raw, want)
+	}
+}
+
+func TestReleaseTrustPolicy_WorkflowRefCondition(t *testing.T) {
+	raw, err := buildReleaseTrustPolicy(testProviderARN, ReleaseRoleConfig{
+		Project:         "billing",
+		SubjectPatterns: []string{"repo:acme/billing:ref:refs/tags/*"},
+		WorkflowRefPatterns: []string{
+			"acme/billing/.github/workflows/release.yaml@refs/tags/v*",
+			"acme/ci-workflows/.github/workflows/release-private.yaml@refs/tags/v5.*",
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildReleaseTrustPolicy: %v", err)
+	}
+
+	const want = `{"StringEquals":{"token.actions.githubusercontent.com:aud":"sts.amazonaws.com"},` +
+		`"StringLike":{"token.actions.githubusercontent.com:job_workflow_ref":` +
+		`["acme/billing/.github/workflows/release.yaml@refs/tags/v*","acme/ci-workflows/.github/workflows/release-private.yaml@refs/tags/v5.*"],` +
+		`"token.actions.githubusercontent.com:sub":["repo:acme/billing:ref:refs/tags/*"]}}`
+
+	var doc struct {
+		Statement []struct {
+			Condition json.RawMessage `json:"Condition"`
+		} `json:"Statement"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if len(doc.Statement) != 1 {
+		t.Fatalf("expected the CI statement only, got %d", len(doc.Statement))
+	}
+
+	if got := string(doc.Statement[0].Condition); got != want {
+		t.Errorf("condition:\n got %s\nwant %s", got, want)
+	}
+}
+
+// The human statement is never conditioned on the workflow: a person has
+// no job_workflow_ref.
+func TestReleaseTrustPolicy_WorkflowRefLeavesHumanStatementAlone(t *testing.T) {
+	doc := mustTrust(t, ReleaseRoleConfig{
+		Project:              "billing",
+		SubjectPatterns:      []string{"repo:acme/billing:ref:refs/tags/*"},
+		WorkflowRefPatterns:  []string{"acme/billing/.github/workflows/release.yaml@refs/tags/v*"},
+		OwnerAccountID:       "111122223333",
+		HumanRoleARNPatterns: []string{"arn:aws:iam::111122223333:role/x"},
+	})
+
+	if len(doc.Statement) != 2 {
+		t.Fatalf("want 2 statements, got %d", len(doc.Statement))
+	}
+
+	if _, ok := doc.Statement[1].Condition.StringLike["token.actions.githubusercontent.com:job_workflow_ref"]; ok {
+		t.Error("human statement must not carry job_workflow_ref")
+	}
+}
+
+func TestReleaseTrustPolicy_WorkflowRefValidation(t *testing.T) {
+	for name, tc := range map[string]struct {
+		subjects []string
+		refs     []string
+	}{
+		"empty pattern":          {[]string{"repo:a/b:ref:refs/tags/*"}, []string{""}},
+		"empty among valid":      {[]string{"repo:a/b:ref:refs/tags/*"}, []string{"a/b/.github/workflows/r.yaml@refs/tags/v*", ""}},
+		"space":                  {[]string{"repo:a/b:ref:refs/tags/*"}, []string{"a/b/.github/workflows/r.yaml @refs/tags/v*"}},
+		"tab":                    {[]string{"repo:a/b:ref:refs/tags/*"}, []string{"a/b/.github/workflows/r.yaml\t@refs/tags/v*"}},
+		"newline":                {[]string{"repo:a/b:ref:refs/tags/*"}, []string{"a/b/.github/workflows/r.yaml@refs/tags/v*\n"}},
+		"no subject patterns":    {nil, []string{"a/b/.github/workflows/r.yaml@refs/tags/v*"}},
+		"empty subject patterns": {[]string{}, []string{"a/b/.github/workflows/r.yaml@refs/tags/v*"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := buildReleaseTrustPolicy(testProviderARN, ReleaseRoleConfig{
+				Project:              "billing",
+				SubjectPatterns:      tc.subjects,
+				WorkflowRefPatterns:  tc.refs,
+				OwnerAccountID:       "111122223333",
+				HumanRoleARNPatterns: []string{"arn:aws:iam::111122223333:role/x"},
+			})
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}

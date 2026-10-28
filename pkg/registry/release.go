@@ -205,6 +205,7 @@ func DeployReleaseRoles(
 		_, err = DeployReleaseRole(c, logger, provider, oidcProviderARN, ReleaseRoleConfig{
 			Project:             p.Name,
 			SubjectPatterns:     []string{target.Subject},
+			WorkflowRefPatterns: target.WorkflowRefs,
 			PermissionsBoundary: cfg.PermissionsBoundaryARN,
 			RepositoryARNs: []string{
 				fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s/*", config.PrimaryRegion, accountID, p.Name),
@@ -238,6 +239,11 @@ type (
 		Repo    string
 		Prefix  string
 		Subject string
+
+		// WorkflowRefs are the job_workflow_ref patterns the project's
+		// override states (Release.Overrides[...].WorkflowRefs); empty
+		// means the role is not conditioned on the workflow.
+		WorkflowRefs []string
 	}
 )
 
@@ -270,7 +276,15 @@ type (
 func releaseSubject(release *ReleaseConfig, project string) (ReleaseTarget, error) {
 	repo, tag, prefix := release.SourceRepo, project+"/v*", release.SubjectPrefix
 
+	var workflowRefs []string
+
 	if o, ok := release.Overrides[project]; ok {
+		if err := validateWorkflowRefPatterns(o.WorkflowRefs); err != nil {
+			return ReleaseTarget{}, fmt.Errorf("release.overrides.%s.workflow_refs: %w", project, err)
+		}
+
+		workflowRefs = o.WorkflowRefs
+
 		if o.SourceRepo != "" {
 			repo = o.SourceRepo
 		}
@@ -306,6 +320,8 @@ func releaseSubject(release *ReleaseConfig, project string) (ReleaseTarget, erro
 		Repo:    repo,
 		Prefix:  prefix,
 		Subject: fmt.Sprintf("%s:ref:refs/tags/%s", prefix, tag),
+
+		WorkflowRefs: workflowRefs,
 	}, nil
 }
 
