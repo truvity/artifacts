@@ -9,7 +9,7 @@ public or private, who may write, how it is named and versioned).
 
 | What | Where |
 | --- | --- |
-| Go module `github.com/truvity/artifacts` | `go get github.com/truvity/artifacts@v0.1.0` |
+| Go module `github.com/truvity/artifacts` | `go get github.com/truvity/artifacts@v0.7.0` |
 | `pkg/registry` — ECR repositories per project and tier, lifecycle, repository policies, release roles (GitHub OIDC), the warm BuildKit cache, read-only CodeArtifact reader roles, the Lambda archive bucket | Go package, Pulumi functions |
 | `pkg/ecrcache` — the standard ECR pull-through cache rules, credentials injected | Go package, over `github.com/truvity/k8s` |
 | `pkg/codeartifact` — a CodeArtifact domain and its repositories (upstreams, external connection), adoption of existing ones by import | Go package, Pulumi functions |
@@ -57,7 +57,7 @@ one ships with an alias.
 ## Install and a worked example
 
 ```sh
-go get github.com/truvity/artifacts@v0.1.0
+go get github.com/truvity/artifacts@v0.7.0
 ```
 
 ```go
@@ -91,9 +91,25 @@ err = ecrcache.Deploy(ctx, logger, ecrcache.Options{Provider: provider, Credenti
 The functions register resources directly under your stack, so adopting a stack
 that already declares them is an empty preview ([docs/contract.md](docs/contract.md)).
 
+## Platform part and company part
+
+**Platform part.** The platform admin applies the shared part of the registry
+accounts (`registry.DeployReleaseShared`: the GitHub OIDC provider, the warm
+BuildKit cache and the CodeArtifact reader roles), the package registry
+(`pkg/codeartifact`) and, in each cluster account, the pull-through cache rules
+(`pkg/ecrcache`). Where each kind lives is in [docs/kinds.md](docs/kinds.md) and
+the resource names are in [docs/contract.md](docs/contract.md).
+
+**Company part.** A company's SRE applies the registries and the release roles
+of its own projects, `registry.DeployECR` for the repositories and
+`registry.DeployReleaseRoles` for one release role per project, from its own
+Pulumi stacks once they have moved there (the platform admin applies them until
+then). The company states its own account IDs, regions, projects and release
+subjects ([docs/contract.md](docs/contract.md)).
+
 ## Consumers
 
-None recorded at v0. A repository that adopts it adds a line here.
+The maintainers' platform repository, through the Go module.
 
 ## Neighbours
 
